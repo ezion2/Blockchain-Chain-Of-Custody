@@ -5,8 +5,7 @@ from parser import block_chain
 
 class Parser:
 
-    @staticmethod
-    def build_args():
+    def build_args(self):
         """
         Constructs command line arguments for the chain-of-custody tool
         """

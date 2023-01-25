@@ -6,3 +6,4 @@ def block_chain():
     Returns:
         Nothing
     """
+    print("hello")
