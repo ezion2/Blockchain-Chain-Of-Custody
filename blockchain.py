@@ -1,27 +1,15 @@
 import hashlib
 import json
-from enum import Enum
-
-class State(enum):
-    INITIAL = 0
-    CHECKEDIN = 1
-    CHECKEDOUT = 2
-    DISPOSED = 3
-    DESTROYED = 4
-    RELEASED = 5
-
-
-
-
+import struct
 
 class Block:
     def __init__(self, previous_hash, timeStamp, case_id, item_id, state, data_length, data):
-        self.previous_hash = previous_hash
-        self.timeStamp =timeStamp
-        self.case_id - case_id
-        self.item_id = item_id
-        self.state = state
-        self.data_length = data_length
+        self.previous_hash = struct.pack('32s', previous_hash)
+        self.timeStamp = struct.pack('d', timeStamp)
+        self.case_id = struct.pack('16s', case_id)
+        self.item_id = struct.pack('I', item_id)
+        self.state = struct.pack('12s', state)
+        self.data_length = struct.pack('I', data_length)
         self.data = data
         self.hash = self.calculate_hash()
 
