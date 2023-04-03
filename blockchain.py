@@ -119,7 +119,7 @@ class Blockchain:
                 self.print_check(block.case_id,state_str,item_id_int,utc_epoch,iso_str,'Checked in item')
 
 
-    def check_out(self, case_id, item_id):
+    def check_out(self, item_id):
         """Searches blockchain for a given case
         and checks if is not already checked out,
         if not it will proceed with checkout otherwise exits program with error"""
