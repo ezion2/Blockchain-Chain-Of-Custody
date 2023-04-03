@@ -20,7 +20,18 @@ def add_case(args):
 
 
 def checkout(args):
-    print(f"{args.case_id} {args.item_id}")
+    found = False
+    blockchain = Blockchain(False)
+    # check if item id exists
+    for item in args.item_id:
+        for block in blockchain.chain:
+            block_item_id = struct.unpack('I', block.item_id)[0]
+            if block_item_id == int(item):
+                blockchain.check_in(args.item_id)
+                found = True
+    if found is False:
+        print('Item not found in block...')
+        sys.exit(1)
 
 
 def checkin(args):
