@@ -82,14 +82,13 @@ def log(args):
 
             entries.append((entry[40:56].decode().replace('\x00', ''), int.from_bytes(entry[56:60], byteorder="little"), entry[60:72].decode().replace('\x00', ''), datetime.datetime.fromtimestamp(struct.unpack("<d",entry[32:40])[0]).strftime('%Y-%m-%dT%H:%M:%S.%fZ')))
     
-    #print("Case: {0}\nItem: {1}\nAction: {2}\nTime: {3}\n".format(entries[0][0], entries[0][1], entries[0][2], entries[0][3]))
-
     # Filtering proccess
     # Filter based on caseID
     if args.case_id != None:
         for tuple in entries[:]:
             if args.case_id not in tuple:
                 entries.remove(tuple)
+
     # Filter based on itemID
     if args.item_id != None:
         for tuple in entries[:]:
