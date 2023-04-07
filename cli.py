@@ -32,13 +32,13 @@ class Parser:
         log_parser.add_argument('-n', dest='num_entries', help="Enter number of entries to log")
         log_parser.add_argument('-c', dest='case_id', help="Enter the case ID")
         log_parser.add_argument('-i', dest='item_id', help="Enter the item ID")
-        log_parser.add_argument('-r', dest='reverse', action='store_true', help="Returns log in reverse")
+        log_parser.add_argument('-r', dest='reverse', help="Reverses the order of the block entries to show the most recent entries first.")
 
         removal_parser = options.add_parser('remove', help='remove a case')
         removal_parser.set_defaults(func=remove)
         removal_parser.add_argument('-y', dest='reason', help="Enter reason for removal")
         removal_parser.add_argument('-o', dest='owner', help="Enter name of owner")
-        removal_parser.add_argument('-i', dest='item_id', help="Reverses the order of the block entries to show the most recent entries first.")
+        removal_parser.add_argument('-i', dest='item_id', help="Enter the item ID")
 
         init_parser = options.add_parser('init', help='Initialize Blockchain')
         init_parser.set_defaults(func=initialize_blockchain)
