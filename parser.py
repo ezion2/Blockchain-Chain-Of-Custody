@@ -50,7 +50,7 @@ def checkin(args):
         sys.exit(1)
 
 def log(args):
-    #print(f"{args.item_id}")
+    # To store all our entries
     entries = []
     with open("blockchain_file", "rb") as file:
         # Skipping the initial block, we need not log it
