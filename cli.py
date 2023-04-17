@@ -32,7 +32,7 @@ class Parser:
         log_parser.add_argument('-n', dest='num_entries', help="Enter number of entries to log")
         log_parser.add_argument('-c', dest='case_id', help="Enter the case ID")
         log_parser.add_argument('-i', dest='item_id', help="Enter the item ID")
-        log_parser.add_argument('-r', dest='reverse', help="Reverses the order of the block entries to show the most recent entries first.")
+        log_parser.add_argument('-r', dest='reverse', action='store_true', help="Reverses the order of the block entries to show the most recent entries first.")
 
         removal_parser = options.add_parser('remove', help='remove a case')
         removal_parser.set_defaults(func=remove)
