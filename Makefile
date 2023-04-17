@@ -1,4 +1,3 @@
-
 all:
 	pip install pyinstaller					# found online as a solution to creating a python executable https://datatofish.com/executable-pyinstaller/
 	pip install -r requirements.txt
