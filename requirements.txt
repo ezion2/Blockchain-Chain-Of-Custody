@@ -1,0 +1,4 @@
+pyinstaller
+hashlib
+subprocess
+parser
