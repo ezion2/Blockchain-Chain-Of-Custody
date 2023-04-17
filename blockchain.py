@@ -1,9 +1,9 @@
 #necessary libraries
 import hashlib
 import struct
+import pickle
 import sys
 import time, datetime
-import uuid
 
 #blockchain file name
 BCF = 'blockchain_file'
@@ -19,6 +19,11 @@ class Block:
         self.state = struct.pack('12s', state)
         self.data_length = struct.pack('I', data_length)
         self.data = struct.pack((str(data_length) + 's'), data)
+        self.hash = self.calculate_hash()
+
+    #calculates sha-256 hash of current block object
+    def calculate_hash(self):
+        return hashlib.sha256(pickle.dumps(self)).hexdigest()
 
 #Class to construct full blockchain data structure
 class Blockchain:
@@ -85,11 +90,8 @@ class Blockchain:
     #add block to blockchain data structure
     def add_block(self, case_id, item_id):
         #creates new block and adds to chain
-        # Computing the hash on the data itself, not the object
-        # The hash is the hex value, not the ascii representation, lets us fit all 64 characters in the file without going over byte limit
-        previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
-        previous_hash_byt = hashlib.sha256(previous_data).digest()
-        new_block = Block(previous_hash_byt, time.time(), bytes.fromhex(case_id), int(item_id), b'CHECKEDIN', 5, b'None')
+        previous_hash_byt = (self.get_latest_block().hash).encode()
+        new_block = Block(previous_hash_byt, time.time(), (case_id).encode(), int(item_id), b'CHECKEDIN', 5, b'None')
         self.chain.append(new_block)
         self.add_to_file(new_block)
 
@@ -102,94 +104,40 @@ class Blockchain:
         #output format and print
         new_block_str = 'Added item: {0} \n\tStatus: {1} \n\tTime of action: {2}'.format(item_id_int, state_str, iso_str)
         print(new_block_str)
-
     def check_in(self, item_id):
         """Searches blockchain for a given case and checks it in otherwise exits program with error"""
-        # Looping in reverse, since latest additions to the block will be found at the end presumably
-        for block in reversed(self.chain):
-            blockItemID = str(struct.unpack('I', block.item_id)[0])
-            if blockItemID == item_id:
-                blockItemAction = struct.unpack('12s', block.state)[0].decode().replace('\x00', '')
-                if blockItemAction == 'CHECKEDOUT':
-                    # Computing the hash on the data itself
-                    # The hash is the hex value, not the ascii representation, lets us fit all 64 characters in the file without going over byte limit
-                    previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
-                    previous_hash_byt = hashlib.sha256(previous_data).digest()
-                    # Block Case is stored as base 16 uuid, stored as hex values not the ascii representation, letting us have acccess to all 32 characters with only 16 bytes
-                    blockCaseID = bytes.fromhex(hex(int.from_bytes(block.case_id, byteorder="big"))[2:])
-                    new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), b'CHECKEDIN', 5, b'None')
-                    self.chain.append(new_block)
-                    self.add_to_file(new_block)
-                    state_str = (struct.unpack('12s', new_block.state)[0]).decode()
-                    item_id_int = struct.unpack('I', new_block.item_id)[0]
-                    utc_epoch = struct.unpack('d', new_block.timeStamp)[0]
-                    iso_str = self.utcEpoch_to_localISO(utc_epoch)
-                    self.print_check(uuid.UUID(bytes.hex(block.case_id)), state_str, item_id_int, utc_epoch, iso_str,'Checked in item')
-                    break
-                elif struct.unpack('12s', block.state)[0].decode().replace('\x00', '') == 'CHECKEDIN':
-                    print("Error: Cannot check in an item that has already been checked in.")
-                    sys.exit(1)
+        for block in self.chain:
+            if struct.unpack('I',block.item_id)[0].decode() == item_id:
+                previous_hash_byt = self.get_latest_block().hash.encode()
+                new_block = Block(previous_hash_byt, time.time(), block.case_id.encode(), int(item_id), b'CHECKEDIN', 5, b'None')
+                self.chain.append(new_block)
+                self.add_to_file(new_block)
+                state_str = (struct.unpack('12s', new_block.state)[0]).decode()
+                item_id_int = struct.unpack('I', new_block.item_id)[0]
+                utc_epoch = struct.unpack('d', new_block.timeStamp)[0]
+                iso_str = self.utcEpoch_to_localISO(utc_epoch)
+                self.print_check(block.case_id,state_str,item_id_int,utc_epoch,iso_str,'Checked in item')
+
 
     def check_out(self, item_id):
         """Searches blockchain for a given case
         and checks if is not already checked out,
         if not it will proceed with checkout otherwise exits program with error"""
-        # Looping in reverse, since latest additions to the block will be found at the end presumably
-        for block in reversed(self.chain):
-            blockItemID = str(struct.unpack('I', block.item_id)[0])
-            if blockItemID == item_id:
-                # Have to get rid of null characters at the end
-                blockItemAction = struct.unpack('12s', block.state)[0].decode().replace('\x00', '')
-                if blockItemAction == 'CHECKEDIN':
-                    # Computing the hash on the data itself
-                    # The hash is the hex value, not the ascii representation, lets us fit all 64 characters in the file without going over byte limit
-                    previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
-                    previous_hash_byt = hashlib.sha256(previous_data).digest()
-                    # Block Case is stored as base 16 uuid, stored as hex values not the ascii representation, letting us have acccess to all 32 characters with only 16 bytes
-                    blockCaseID = bytes.fromhex(hex(int.from_bytes(block.case_id, byteorder="big"))[2:])
-                    new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), b'CHECKEDOUT', 5,b'None')
+        for block in self.chain:
+            if struct.unpack('I', block.item_id)[0].decode() == item_id:
+                if struct.unpack('12s', block.state)[0].decode() == 'CHECKEDIN':
+                    previous_hash_byt = self.get_latest_block().hash.encode()
+                    new_block = Block(previous_hash_byt, time.time(), block.case_id.encode(), int(item_id), b'CHECKEDOUT', 5,b'None')
                     self.chain.append(new_block)
                     self.add_to_file(new_block)
                     state_str = (struct.unpack('12s', new_block.state)[0]).decode()
                     item_id_int = struct.unpack('I', new_block.item_id)[0]
                     utc_epoch = struct.unpack('d', new_block.timeStamp)[0]
                     iso_str = self.utcEpoch_to_localISO(utc_epoch)
-                    self.print_check(uuid.UUID(bytes.hex(block.case_id)), state_str, item_id_int, utc_epoch, iso_str, 'Checked out item')
-                    break
-                elif struct.unpack('12s', block.state)[0].decode().replace('\x00', '') == 'CHECKEDOUT':
+                    self.print_check(block.case_id, state_str, item_id_int, utc_epoch, iso_str, 'Checked out item')
+                elif struct.unpack('12s', block.state)[0].decode() == 'CHECKEDOUT':
                     print("Error: Cannot check out a checked out item. Must check it in first.")
                     sys.exit(1)
-
-    def remove(self, item_id, reason, owner):
-        #search through blockchain for entered item_ID
-        #Throw error if not found DONE
-        #If status is already REMOVED, fail DONE
-        #if status is checked out, fail DONE
-        #else, continue remove operation
-        #Write over the removed block 
-        #at end, print removed data DONE
-        #Check for -o if reason is released?
-        for block in self.chain:
-            if struct.unpack('I', block.item_id)[0].decode() == item_id:
-                if struct.unpack('12s', block.state)[0].decode() == 'CHECKEDOUT':
-                    print("Error: Cannot remove a checked out item.")
-                    sys.exit(1)
-                elif struct.unpack('12s', block.state)[0].decode() == 'DISPOSED' or 'RELEASED' or 'DESTROYED':
-                    print("Error: Cannot remove an item that has already been removed.")
-                    sys.exit(1)
-                elif struct.unpack('12s', block.state)[0].decode() == 'CHECKEDIN': #MUST BE CHECKED IN TO SUCCEED
-                    previous_hash_byt = self.get_latest_block().hash.encode() #MUST WRITE OVER THE FOUND BLOCK, CHANGE STATUS TO THAT OF COMMAND
-                    new_block = Block(previous_hash_byt, time.time(), block.case_id.encode(), int(item_id), reason, 5,b'None')
-                    self.chain.append(new_block)
-                    self.add_to_file(new_block)
-                    utc_epoch = struct.unpack('d', new_block.timeStamp)[0]
-                    iso_str = self.utcEpoch_to_localISO(utc_epoch)
-
-
-                    print("Removed item: ", item_id[0])
-                    print("\tStatus: ", reason)
-                    print("\tOwner info:", owner)
-                    print("\tTime: ", iso_str )
 
     def print_check(self, case, state, item_id, utc_epoch, iso_str, action_str):
         new_block_str = f'Case: {case} \n{action_str}: {item_id} \n\tStatus: {state} \n\tTime of action: {iso_str}'
