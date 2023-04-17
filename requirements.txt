@@ -1,4 +1,1 @@
 pyinstaller
-hashlib
-subprocess
-parser
