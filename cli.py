@@ -222,7 +222,7 @@ def remove(args):
     for item in args.item_id:
         for block in blockchain.chain:
             block_item_id = struct.unpack('I', block.item_id)[0]
-            if block_item_id == int(item):
+            if block_item_id == int(item) and found is False:
                 blockchain.remove(args.item_id, args.reason, args.owner)
                 found = True
                 break
