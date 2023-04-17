@@ -1,5 +1,6 @@
 import argparse
 import os
+import os.path
 import hashlib
 import struct
 import sys
@@ -63,8 +64,10 @@ def add_case(args):
     except ValueError:
         print("Invalid UUID format! Terminating...")
         sys.exit(1)
-
-    blockchain = Blockchain(False)
+    if(os.path.isfile("blockchain_file")):
+        blockchain = Blockchain(False)
+    else:
+        blockchain = Blockchain(True)
 
     # check if item id exists
     if(args.item_id and args.case_id):
@@ -91,7 +94,7 @@ def checkout(args):
     for item in args.item_id:
         for block in blockchain.chain:
             block_item_id = struct.unpack('I', block.item_id)[0]
-            if int(block_item_id) == int(args.item_id):
+            if int(block_item_id) == int(args.item_id) and found is False:
                 blockchain.check_out(args.item_id)
                 found = True
                 break
@@ -107,7 +110,7 @@ def checkin(args):
     for item in args.item_id:
         for block in blockchain.chain:
             block_item_id = struct.unpack('I', block.item_id)[0]
-            if int(block_item_id) == int(args.item_id):
+            if int(block_item_id) == int(args.item_id) and found is False:
                 blockchain.check_in(args.item_id)
                 found = True
                 break
@@ -413,12 +416,13 @@ class Blockchain:
 
     def check_in(self, item_id):
         """Searches blockchain for a given case and checks it in otherwise exits program with error"""
+        found = False
         # Looping in reverse, since latest additions to the block will be found at the end presumably
         for block in reversed(self.chain):
             blockItemID = str(struct.unpack('I', block.item_id)[0])
             if blockItemID == item_id:
                 blockItemAction = struct.unpack('12s', block.state)[0].decode().replace('\x00', '')
-                if blockItemAction == 'CHECKEDOUT':
+                if blockItemAction == 'CHECKEDOUT' and found is False:
                     # Computing the hash on the data itself
                     # The hash is the hex value, not the ascii representation, lets us fit all 64 characters in the file without going over byte limit
                     previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
@@ -435,8 +439,9 @@ class Blockchain:
                     iso_str = self.utcEpoch_to_localISO(utc_epoch)
                     self.print_check(uuid.UUID(bytes.hex(block.case_id)), state_str, item_id_int, utc_epoch, iso_str,
                                      'Checked in item')
+                    found = True
                     break
-                elif struct.unpack('12s', block.state)[0].decode().replace('\x00', '') == 'CHECKEDIN':
+                elif struct.unpack('12s', block.state)[0].decode().replace('\x00', '') == 'CHECKEDIN' and found is False:
                     print("Error: Cannot check in an item that has already been checked in.")
                     sys.exit(1)
 
@@ -444,13 +449,14 @@ class Blockchain:
         """Searches blockchain for a given case
         and checks if is not already checked out,
         if not it will proceed with checkout otherwise exits program with error"""
+        found = False
         # Looping in reverse, since latest additions to the block will be found at the end presumably
         for block in reversed(self.chain):
             blockItemID = str(struct.unpack('I', block.item_id)[0])
-            if blockItemID == item_id:
+            if int(blockItemID) == int(item_id):
                 # Have to get rid of null characters at the end
                 blockItemAction = struct.unpack('12s', block.state)[0].decode().replace('\x00', '')
-                if blockItemAction == 'CHECKEDIN':
+                if blockItemAction == "CHECKEDIN" and found is False:
                     # Computing the hash on the data itself
                     # The hash is the hex value, not the ascii representation, lets us fit all 64 characters in the file without going over byte limit
                     previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
@@ -467,8 +473,9 @@ class Blockchain:
                     iso_str = self.utcEpoch_to_localISO(utc_epoch)
                     self.print_check(uuid.UUID(bytes.hex(block.case_id)), state_str, item_id_int, utc_epoch, iso_str,
                                      'Checked out item')
+                    found = True
                     break
-                elif struct.unpack('12s', block.state)[0].decode().replace('\x00', '') == 'CHECKEDOUT':
+                else:
                     print("Error: Cannot check out a checked out item. Must check it in first.")
                     sys.exit(1)
 
