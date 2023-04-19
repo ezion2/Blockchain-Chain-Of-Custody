@@ -268,8 +268,10 @@ def verify_blockchain(args):
         initial_block_caseID = str(uuid.UUID("00000000000000000000000000000000"))
         initial_block_itemID = int.from_bytes(initial_chunk[56:60], byteorder="little")
         initial_block_action = initial_chunk[60:72].decode().replace('\x00', '')
-        initial_block_timestamp = datetime.datetime.fromtimestamp(struct.unpack("<d",initial_chunk[32:40])[0]).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-
+        try:
+            initial_block_timestamp = datetime.datetime.fromtimestamp(struct.unpack("<d",initial_chunk[32:40])[0]).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        except OverflowError:
+            sys.exit(1)
         entries.append([initial_block_parent_block_hash, initial_block_sha256, initial_block_caseID, initial_block_itemID, initial_block_action, initial_block_timestamp])
 
         # Loop indefinitely until chunk is empty.
@@ -282,7 +284,10 @@ def verify_blockchain(args):
                 break
 
             # Find out how long the string part of the entry is since it is variable sized
-            dataLength = struct.unpack("<I", chunk1[72:76])[0]
+            try:
+                dataLength = struct.unpack("<I", chunk1[72:76])[0]
+            except struct.error:
+                sys.exit(1)
             length = "{0}s".format(dataLength)
             # Read it out
             chunk2 = struct.unpack(length, file.read(dataLength))[0]
