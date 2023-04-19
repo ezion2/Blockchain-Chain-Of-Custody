@@ -1,3 +1,4 @@
+
 import argparse
 import os
 import os.path
@@ -36,11 +37,11 @@ class Parser:
         log_parser.add_argument('-n', dest='num_entries', help="Enter number of entries to log")
         log_parser.add_argument('-c', dest='case_id', help="Enter the case ID")
         log_parser.add_argument('-i', dest='item_id', help="Enter the item ID")
-        log_parser.add_argument('-r', dest='reverse', action='store_true', help="Reverses the order of the block entries to show the most recent entries first.")
+        log_parser.add_argument('-r', '--reverse', dest='reverse', action='store_true', help="Reverses the order of the block entries to show the most recent entries first.")
 
         removal_parser = subparsers.add_parser('remove', help='remove a case')
         removal_parser.set_defaults(func=remove)
-        removal_parser.add_argument('-y', dest='reason', help="Enter reason for removal")
+        removal_parser.add_argument('-y', '--why', dest='reason', help="Enter reason for removal")
         removal_parser.add_argument('-o', dest='owner', help="Enter name of owner")
         removal_parser.add_argument('-i', dest='item_id', help="Enter the item ID")
 
@@ -64,11 +65,12 @@ def add_case(args):
     except ValueError:
         print("Invalid UUID format! Terminating...")
         sys.exit(1)
-    if(os.path.isfile("blockchain_file")):
+    if(os.path.isfile(BCF)):
         blockchain = Blockchain(False)
+        block = True
     else:
-        blockchain = Blockchain(True)
-
+        blockchain = Blockchain(False)
+        block = False
     # check if item id exists
     if(args.item_id and args.case_id):
         for item in args.item_id:
@@ -81,7 +83,7 @@ def add_case(args):
         # print case and newly added items
         print('Case: ', case_uuid)
         for item in args.item_id:
-            blockchain.add_block(args.case_id.replace("-", ""), item)
+            blockchain.add_block(args.case_id.replace("-", ""), item, block)
     else:
         sys.exit(1)
 
@@ -122,7 +124,7 @@ def checkin(args):
 def log(args):
     # To store all our entries
     entries = []
-    with open("blockchain_file", "rb") as file:
+    with open(BCF, "rb") as file:
         # Reading the initial block, we need to log it
         initial_chunk = file.read(90)
         initial_block_caseID = str(uuid.UUID("00000000000000000000000000000000"))
@@ -152,7 +154,13 @@ def log(args):
             entry = chunk1 + chunk2
 
             # Appending entry
-            caseID = str(uuid.UUID(hex(int.from_bytes(entry[40:56], byteorder="big"))[2:].upper()))
+            # Fixing missing leading zeros
+            part1 = hex(int.from_bytes(entry[40:56], byteorder="big"))[2:]
+            if len(part1) < 32:
+                leadingZeros = 32 - len(part1)
+                for i in range(leadingZeros):
+                    part1 = "0"+part1
+            caseID = str(uuid.UUID(part1))
             itemID = int.from_bytes(entry[56:60], byteorder="little")
             action = entry[60:72].decode().replace('\x00', '')
             timestamp = datetime.datetime.fromtimestamp(struct.unpack("<d", entry[32:40])[0]).strftime(
@@ -163,7 +171,7 @@ def log(args):
     # Filter based on caseID
     entries = caseID_Filter(entries, args)
     # Filter based on itemID
-    entries = itemID_Filter(entries, args)
+    entries = itemID_Filter(entries, args.item_id)
 
     # index i to allow us to print how many entries is required
     # if args.num_entries is set to None then we will be able to print out ever entry in the blockchain
@@ -206,13 +214,28 @@ def caseID_Filter(array, args=None):
 
 
 # Method to assist in the functionality of the log and verify function.
-def itemID_Filter(array, args=None):
+def itemID_Filter(array, args=None, verify=False):
     # Filter based on itemID
-    if args.item_id != None:
-        for tuple in array[:]:
-            if int(args.item_id) not in tuple:
-                array.remove(tuple)
-    return array
+    if verify == False:
+        if args != None:
+            for tuple in array[:]:
+                if int(args) not in tuple:
+                    array.remove(tuple)
+        return array
+    else:
+        # index
+        i = 0
+        validIndex = []
+        if args != None:
+            for tuple in array[:]:
+                if int(args) in tuple:
+                    validIndex.append(i)
+                    i = i + 1
+            # Removal
+            for tuple in array[:]:
+                if int(args) not in tuple:
+                    array.remove(tuple)
+        return (array, validIndex)
 
 
 def remove(args):
@@ -222,7 +245,7 @@ def remove(args):
     for item in args.item_id:
         for block in blockchain.chain:
             block_item_id = struct.unpack('I', block.item_id)[0]
-            if block_item_id == int(item) and found is False:
+            if int(block_item_id) == int(args.item_id) and found is False:
                 blockchain.remove(args.item_id, args.reason, args.owner)
                 found = True
                 break
@@ -238,11 +261,17 @@ def initialize_blockchain(args):
 def verify_blockchain(args):
     # To store all our entries
     entries = []
-    with open("blockchain_file", "rb") as file:
-        # Skipping the initial block, we need not log it
-        chunk = file.read(90)
-        # initial_block_sha256 = hashlib.sha256(chunk).hexdigest()
-        # hashin = hashlib.sha256(pickle.dumps(chunk)).hexdigest()
+    with open(BCF , "rb") as file:
+        # Reading the initial block
+        initial_chunk = file.read(90)
+        initial_block_parent_block_hash = int.from_bytes(initial_chunk[0:32],byteorder='big')
+        initial_block_sha256 = hashlib.sha256(initial_chunk).hexdigest()
+        initial_block_caseID = str(uuid.UUID("00000000000000000000000000000000"))
+        initial_block_itemID = int.from_bytes(initial_chunk[56:60], byteorder="little")
+        initial_block_action = initial_chunk[60:72].decode().replace('\x00', '')
+        initial_block_timestamp = datetime.datetime.fromtimestamp(struct.unpack("<d",initial_chunk[32:40])[0]).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+        entries.append([initial_block_parent_block_hash, initial_block_sha256, initial_block_caseID, initial_block_itemID, initial_block_action, initial_block_timestamp])
 
         # Loop indefinitely until chunk is empty.
         while True:
@@ -263,55 +292,90 @@ def verify_blockchain(args):
             entry = chunk1 + chunk2
 
             # Appending entry
-            # parent_block_hash = hex(int.from_bytes(entry[0:32],byteorder='big'))[2:].upper()
             parent_block_hash = int.from_bytes(entry[0:32], byteorder='big')
-            caseID = uuid.UUID(hex(int.from_bytes(entry[40:56], byteorder="big"))[2:].upper())
+            caseID = uuid.UUID(hex(int.from_bytes(entry[40:56], byteorder="big"))[2:])
             itemID = int.from_bytes(entry[56:60], byteorder="little")
             action = entry[60:72].decode().replace('\x00', '')
             timestamp = datetime.datetime.fromtimestamp(struct.unpack("<d", entry[32:40])[0]).strftime(
                 '%Y-%m-%dT%H:%M:%S.%fZ')
 
             # Computing the sha256 hash for each individual block
-            blocksha256 = hashlib.sha256(entry).hexdigest().upper()
+            blocksha256 = hashlib.sha256(entry).hexdigest()
 
-            entries.append((parent_block_hash, blocksha256, caseID, itemID, action, timestamp))
+            entries.append([parent_block_hash, blocksha256, caseID, itemID, action, timestamp])
 
     print("Transactions in blockchain: {0}".format(len(entries)))
     # There can be only 1 error at a time
     # Filtering process
     # Check if we have a parent block
     for blockEntry in entries:
-        if len(hex(blockEntry[0])[2:].upper()) == 1 or blockEntry[0] == 0:
+        if len(hex(blockEntry[0])[2:]) == 1 or blockEntry[0] == 0:
             print("State of blockchain: ERROR\nBad block: {0}\nParent block: NOT FOUND".format(blockEntry[1]))
-            return
+            sys.exit(1)
 
     # Check if two blocks were found with the same parent.
     parentsHashes = [hashList[0] for hashList in entries]
     # Going in reverse since I assume that the block that would have the same parent would be later down the list
     for i in range(len(parentsHashes) - 1, -1, -1):
         if parentsHashes.count(parentsHashes[i]) > 1:
-            parentBlock = hex(parentsHashes[i])[2:].upper()
+            parentBlock = hex(parentsHashes[i])[2:]
             print(
                 "State of blockchain: ERROR\nBad block: {0}\nParent block: {1}\nTwo blocks were found with the same parent.".format(
                     entries[i][1], parentBlock))
-            return
+            sys.exit(1)
 
-    # Now checking to see if the sha-256 hash present in the block data, matches with the ????
-    # for blockEntry in entries:
-    #    if len(hex(blockEntry[0])[2:].upper()) == 1 or blockEntry[0] == 0:
-    #        print("State of blockchain: ERROR\nBad block: {0}\nBlock contents do not match block checksum.".format(blockEntry[1]))
-    #        return
+    # Now checking to see if the sha-256 hash for the current block matches the parent sha-256 hash of the next block
+    for i in range(len(entries) - 1):
+        if entries[i][1] != hex(entries[i+1][0])[2:]:
+            print("State of blockchain: ERROR\nBad block: {0}\nBlock contents do not match block checksum.".format(blockEntry[1]))
+            sys.exit(1)
 
     # Check to see if an item has been checked out or checked in after removal from chain.
-    # Check for an item id that has more than one entry
+    itemIDS  = [hashList[3] for hashList in entries]
+    removalCheck(itemIDS, entries)
 
     print("State of blockchain: CLEAN")
-    # for i in entries:
-    #    print(i[2])
+
+# To help with verify function
+def removalCheck(itemIDS, entries):
+    # Base case
+    # Check if list is empty
+    removalFlag = False
+    if len(itemIDS) == 0:
+        return
+    else:
+        removalFlag = False
+        # Loop
+        while itemIDS:
+            # If this item does not have more than 1 entry, remove it
+            if itemIDS.count(itemIDS[0]) < 2:
+                itemIDS.pop(0)
+                entries.pop(0)
+            # If this item has more than 1 entry, check all entries with said item ID
+            elif itemIDS.count(itemIDS[0]) > 1:
+                # Make a copy of entries
+                entryCopy = entries.copy()
+                entryCopy = itemID_Filter(entryCopy, itemIDS[0], True)
+                # Loop through this copy, check to see if an item has been checked out or checked in after removal from chain.
+                for entry in entryCopy[0]:
+                    if entry[4] == 'DISPOSED' or entry[4] == 'RELEASED' or entry[4] == 'DESTROYED':
+                        removalFlag = True
+                    if entry[4] == 'CHECKEDIN' or entry[4] == 'CHECKEDOUT':
+                        if removalFlag == True:
+                            print("State of blockchain: ERROR\nBad block: {0}\nItem checked out or checked in after removal from chain.".format(entry[1]))
+                            sys.exit(1)
+                removalFlag = False
+                # Remove the values we have found from entries
+                shift = 0
+                for i in range(len(entryCopy[1])):
+                    # take into account shifting position
+                    entries.pop(entryCopy[1][i] - shift)
+                    itemIDS.pop(entryCopy[1][i] - shift)
+                    shift = shift + 1
 
 
 # blockchain file name
-BCF = 'blockchain_file'
+BCF = os.environ.get('BCHOC_FILE_PATH')
 
 
 # Class to construct individual blocks
@@ -367,7 +431,7 @@ class Blockchain:
                 # creates initial block
 
     def create_initial_block(self):
-        initial_block = Block(b'None', time.time(), b'None', 0, b'INITIAL', 14, b'Initial Block')
+        initial_block = Block(b'', time.time(), b'', 0, b'INITIAL', 14, b'Initial block')
         return initial_block
 
     # get latest block added to the chain
@@ -392,16 +456,29 @@ class Blockchain:
         return local_iso
 
     # add block to blockchain data structure
-    def add_block(self, case_id, item_id):
+    def add_block(self, case_id, item_id, block):
         # creates new block and adds to chain
         # Computing the hash on the data itself, not the object
         # The hash is the hex value, not the ascii representation, lets us fit all 64 characters in the file without going over byte limit
-        previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
-        previous_hash_byt = hashlib.sha256(previous_data).digest()
-        new_block = Block(previous_hash_byt, time.time(), bytes.fromhex(case_id), int(item_id), b'CHECKEDIN', 5,
-                          b'None')
-        self.chain.append(new_block)
-        self.add_to_file(new_block)
+        # previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
+        # previous_hash_byt = hashlib.sha256(previous_data).digest()
+        # new_block = Block(previous_hash_byt, time.time(), bytes.fromhex(case_id), int(item_id), b'CHECKEDIN', 5,
+        #                   b'None')
+        if(block is False):
+            previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
+            previous_hash_byt = hashlib.sha256(previous_data).digest()
+            new_block = Block(b'None', time.time(), bytes.fromhex(case_id), int(item_id), b'CHECKEDIN', 5,
+                              b'None')
+            self.chain.append(new_block)
+            self.add_to_file(new_block)
+        else:
+            previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
+            previous_hash_byt = hashlib.sha256(previous_data).digest()
+            new_block = Block(previous_hash_byt, time.time(), bytes.fromhex(case_id), int(item_id), b'CHECKEDIN', 5,
+                              b'None')
+            self.chain.append(new_block)
+            self.add_to_file(new_block)
+
 
         # prepare for output
         state_str = (struct.unpack('12s', new_block.state)[0]).decode()
@@ -428,7 +505,14 @@ class Blockchain:
                     previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
                     previous_hash_byt = hashlib.sha256(previous_data).digest()
                     # Block Case is stored as base 16 uuid, stored as hex values not the ascii representation, letting us have acccess to all 32 characters with only 16 bytes
-                    blockCaseID = bytes.fromhex(hex(int.from_bytes(block.case_id, byteorder="big"))[2:])
+                    # Fixes the string to have leading zeros if the caseID has them
+                    # Fixes the string to have leading zeros if the caseID has them
+                    part1 = hex(int.from_bytes(block.case_id, byteorder="big"))[2:]
+                    if len(part1) < 32:
+                        leadingZeros = 32 - len(part1)
+                        for i in range(leadingZeros):
+                            part1 = "0"+part1
+                    blockCaseID = bytes.fromhex(part1)
                     new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), b'CHECKEDIN', 5,
                                       b'None')
                     self.chain.append(new_block)
@@ -462,7 +546,13 @@ class Blockchain:
                     previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
                     previous_hash_byt = hashlib.sha256(previous_data).digest()
                     # Block Case is stored as base 16 uuid, stored as hex values not the ascii representation, letting us have acccess to all 32 characters with only 16 bytes
-                    blockCaseID = bytes.fromhex(hex(int.from_bytes(block.case_id, byteorder="big"))[2:])
+                    # Fixes the string to have leading zeros if the caseID has them
+                    part1 = hex(int.from_bytes(block.case_id, byteorder="big"))[2:]
+                    if len(part1) < 32:
+                        leadingZeros = 32 - len(part1)
+                        for i in range(leadingZeros):
+                            part1 = "0"+part1
+                    blockCaseID = bytes.fromhex(part1)
                     new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), b'CHECKEDOUT', 5,
                                       b'None')
                     self.chain.append(new_block)
@@ -514,10 +604,15 @@ class Blockchain:
                         previous_hash_byt = hashlib.sha256(
                             previous_data).digest()  # MUST WRITE OVER THE FOUND BLOCK, CHANGE STATUS TO THAT OF COMMAND
                         # Block Case is stored as base 16 uuid, stored as hex values not the ascii representation, letting us have acccess to all 32 characters with only 16 bytes
-                        blockCaseID = bytes.fromhex(hex(int.from_bytes(block.case_id, byteorder="big"))[2:])
+                        part1 = hex(int.from_bytes(block.case_id, byteorder="big"))[2:]
+                        if len(part1) < 32:
+                            leadingZeros = 32 - len(part1)
+                            for i in range(leadingZeros):
+                                part1 = "0"+part1
+                        blockCaseID = bytes.fromhex(part1)
                         if owner == None:
                             new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), reason, 5,
-                                              b'None')
+                                              b'')
                         else:
                             new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), reason,
                                               (len(owner) + 1), owner.encode())
