@@ -320,6 +320,8 @@ def verify_blockchain(args):
     # Check if we have a parent block
     for blockEntry in entries:
         if len(hex(blockEntry[0])[2:]) == 1 or blockEntry[0] == 0:
+            if blockEntry[4] == 'INITIAL':
+                continue
             print("State of blockchain: ERROR\nBad block: {0}\nParent block: NOT FOUND".format(blockEntry[1]))
             sys.exit(1)
 
