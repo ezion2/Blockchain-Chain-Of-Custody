@@ -1,4 +1,3 @@
-
 import argparse
 import os
 import os.path
@@ -155,7 +154,7 @@ def log(args):
 
             # Appending entry
             # Fixing missing leading zeros
-            part1 = hex(int.from_bytes(entry[40:56], byteorder="big"))[2:]
+            part1 = hex(int.from_bytes(entry[40:56], byteorder="little"))[2:]
             if len(part1) < 32:
                 leadingZeros = 32 - len(part1)
                 for i in range(leadingZeros):
@@ -202,7 +201,7 @@ def caseID_Filter(array, args=None):
         # Check to see if we got a valid UUID
         try:
             # Convert it to a uuid (to get the formatting) and then back to string (so we can do comparisons also because I left it in the uuid format)
-            logCaseID = str(uuid.UUID(args.case_id))
+            logCaseID = str(uuid.UUID(args.case_id[::1]))
         except ValueError:
             print("Invalid UUID format!")
             sys.exit(1)
@@ -293,7 +292,13 @@ def verify_blockchain(args):
 
             # Appending entry
             parent_block_hash = int.from_bytes(entry[0:32], byteorder='big')
-            caseID = uuid.UUID(hex(int.from_bytes(entry[40:56], byteorder="big"))[2:])
+            # Fix leading zero issue
+            part1 = hex(int.from_bytes(entry[40:56], byteorder="big"))[2:]
+            if len(part1) < 32:
+                leadingZeros = 32 - len(part1)
+                for i in range(leadingZeros):
+                    part1 = "0"+part1
+            caseID = str(uuid.UUID(part1))
             itemID = int.from_bytes(entry[56:60], byteorder="little")
             action = entry[60:72].decode().replace('\x00', '')
             timestamp = datetime.datetime.fromtimestamp(struct.unpack("<d", entry[32:40])[0]).strftime(
@@ -467,15 +472,15 @@ class Blockchain:
         if(block is False):
             previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
             previous_hash_byt = hashlib.sha256(previous_data).digest()
-            new_block = Block(b'None', time.time(), bytes.fromhex(case_id), int(item_id), b'CHECKEDIN', 5,
-                              b'None')
+            new_block = Block(b'', time.time(), bytes(bytearray.fromhex(case_id)[::-1]), int(item_id), b'CHECKEDIN', 5,
+                              b'')
             self.chain.append(new_block)
             self.add_to_file(new_block)
         else:
             previous_data = self.get_latest_block().previous_hash + self.get_latest_block().timeStamp + self.get_latest_block().case_id + self.get_latest_block().item_id + self.get_latest_block().state + self.get_latest_block().data_length + self.get_latest_block().data
             previous_hash_byt = hashlib.sha256(previous_data).digest()
-            new_block = Block(previous_hash_byt, time.time(), bytes.fromhex(case_id), int(item_id), b'CHECKEDIN', 5,
-                              b'None')
+            new_block = Block(previous_hash_byt, time.time(), bytes(bytearray.fromhex(case_id)[::-1]), int(item_id), b'CHECKEDIN', 0,
+                              b'')
             self.chain.append(new_block)
             self.add_to_file(new_block)
 
@@ -513,15 +518,15 @@ class Blockchain:
                         for i in range(leadingZeros):
                             part1 = "0"+part1
                     blockCaseID = bytes.fromhex(part1)
-                    new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), b'CHECKEDIN', 5,
-                                      b'None')
+                    new_block = Block(previous_hash_byt, time.time(), block.case_id[::1], int(item_id), b'CHECKEDIN', 0,
+                                      b'')
                     self.chain.append(new_block)
                     self.add_to_file(new_block)
                     state_str = (struct.unpack('12s', new_block.state)[0]).decode()
                     item_id_int = struct.unpack('I', new_block.item_id)[0]
                     utc_epoch = struct.unpack('d', new_block.timeStamp)[0]
                     iso_str = self.utcEpoch_to_localISO(utc_epoch)
-                    self.print_check(uuid.UUID(bytes.hex(block.case_id)), state_str, item_id_int, utc_epoch, iso_str,
+                    self.print_check(uuid.UUID(bytes.hex(block.case_id[::-1])), state_str, item_id_int, utc_epoch, iso_str,
                                      'Checked in item')
                     found = True
                     break
@@ -553,15 +558,15 @@ class Blockchain:
                         for i in range(leadingZeros):
                             part1 = "0"+part1
                     blockCaseID = bytes.fromhex(part1)
-                    new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), b'CHECKEDOUT', 5,
-                                      b'None')
+                    new_block = Block(previous_hash_byt, time.time(), block.case_id[::1], int(item_id), b'CHECKEDOUT', 0,
+                                      b'')
                     self.chain.append(new_block)
                     self.add_to_file(new_block)
                     state_str = (struct.unpack('12s', new_block.state)[0]).decode()
                     item_id_int = struct.unpack('I', new_block.item_id)[0]
                     utc_epoch = struct.unpack('d', new_block.timeStamp)[0]
                     iso_str = self.utcEpoch_to_localISO(utc_epoch)
-                    self.print_check(uuid.UUID(bytes.hex(block.case_id)), state_str, item_id_int, utc_epoch, iso_str,
+                    self.print_check(uuid.UUID(bytes.hex(block.case_id[::-1])), state_str, item_id_int, utc_epoch, iso_str,
                                      'Checked out item')
                     found = True
                     break
@@ -593,7 +598,7 @@ class Blockchain:
                     # Must be one of: DISPOSED, DESTROYED, or RELEASED
                     if reason == 'DISPOSED' or reason == 'RELEASED' or reason == 'DESTROYED':
                         # Now check if we got RELEASED and make sure and owner is specified
-                        if reason == 'RELEASED' and owner == None:
+                        if reason == 'RELEASED' and owner is None:
                             print(
                                 "Error: Information about the lawful owner to whom the evidence belongs to must be given.")
                             sys.exit(1)
@@ -610,18 +615,16 @@ class Blockchain:
                             for i in range(leadingZeros):
                                 part1 = "0"+part1
                         blockCaseID = bytes.fromhex(part1)
-                        if owner == None:
-                            new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), reason, 5,
-                                              b'')
+                        if owner is None:
+                            new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), reason, 0, b'')
                         else:
-                            new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), reason,
-                                              (len(owner) + 1), owner.encode())
+                            new_block = Block(previous_hash_byt, time.time(), blockCaseID, int(item_id), reason, (len(owner) + 1), owner.encode())
                         self.chain.append(new_block)
                         self.add_to_file(new_block)
                         utc_epoch = struct.unpack('d', new_block.timeStamp)[0]
                         iso_str = self.utcEpoch_to_localISO(utc_epoch)
 
-                        print("Case: {0}\nRemoved item: {1}\n\tStatus: {2}".format(uuid.UUID(bytes.hex(blockCaseID)),
+                        print("Case: {0}\nRemoved item: {1}\n\tStatus: {2}".format(uuid.UUID(bytes.hex(block.case_id[::-1])),
                                                                                    item_id[0], reason.decode()))
                         if owner != None:
                             print("\tOwner info:", owner)
