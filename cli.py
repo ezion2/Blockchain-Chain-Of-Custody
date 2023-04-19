@@ -410,7 +410,10 @@ class Blockchain:
                     next = f.read(32)
                     if next == b'': break
                     previous_hash = struct.unpack('32s', next)
-                    timeStamp = struct.unpack('d', f.read(8))
+                    try:
+                        timeStamp = struct.unpack('d', f.read(8))
+                    except struct.error:
+                        sys.exit(1)
                     case_id = struct.unpack('16s', f.read(16))
                     item_id = struct.unpack('I', f.read(4))
                     state = struct.unpack('12s', f.read(12))
