@@ -148,6 +148,7 @@ def log(args):
             length = "{0}s".format(dataLength)
             # Read it out
             chunk2 = struct.unpack(length, file.read(dataLength))[0]
+            freeFormText = chunk2.decode().replace('\x00', '')
 
             # Combine the two chunks creating our entry
             entry = chunk1 + chunk2
@@ -165,7 +166,7 @@ def log(args):
             timestamp = datetime.datetime.fromtimestamp(struct.unpack("<d", entry[32:40])[0]).strftime(
                 '%Y-%m-%dT%H:%M:%S.%fZ')
 
-            entries.append((caseID, itemID, action, timestamp))
+            entries.append((caseID, itemID, action, timestamp, dataLength, freeFormText))
 
     # Filter based on caseID
     entries = caseID_Filter(entries, args)
@@ -229,7 +230,7 @@ def itemID_Filter(array, args=None, verify=False):
             for tuple in array[:]:
                 if int(args) in tuple:
                     validIndex.append(i)
-                    i = i + 1
+                i = i + 1
             # Removal
             for tuple in array[:]:
                 if int(args) not in tuple:
@@ -268,11 +269,23 @@ def verify_blockchain(args):
         initial_block_caseID = str(uuid.UUID("00000000000000000000000000000000"))
         initial_block_itemID = int.from_bytes(initial_chunk[56:60], byteorder="little")
         initial_block_action = initial_chunk[60:72].decode().replace('\x00', '')
+
+
+        try:
+            initial_block_dataLength = struct.unpack("<I", initial_chunk[72:76])[0]
+        except struct.error:
+            sys.exit(1)
+        initial_block_length = "{0}s".format(initial_block_dataLength)
+        # Read it out
+        initial_block_chunk2 = struct.unpack(initial_block_length, initial_chunk[76:(76+initial_block_dataLength)])[0]
+        initial_block_freeFormText = initial_block_chunk2.decode().replace('\x00', '')
+
+
         try:
             initial_block_timestamp = datetime.datetime.fromtimestamp(struct.unpack("<d",initial_chunk[32:40])[0]).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         except OverflowError:
             sys.exit(1)
-        entries.append([initial_block_parent_block_hash, initial_block_sha256, initial_block_caseID, initial_block_itemID, initial_block_action, initial_block_timestamp])
+        entries.append([initial_block_parent_block_hash, initial_block_sha256, initial_block_caseID, initial_block_itemID, initial_block_action, initial_block_timestamp, initial_block_dataLength, initial_block_freeFormText])
 
         # Loop indefinitely until chunk is empty.
         while True:
@@ -291,6 +304,7 @@ def verify_blockchain(args):
             length = "{0}s".format(dataLength)
             # Read it out
             chunk2 = struct.unpack(length, file.read(dataLength))[0]
+            freeFormText = chunk2.decode().replace('\x00', '')
 
             # Combine the two chunks creating our entry
             entry = chunk1 + chunk2
@@ -312,9 +326,10 @@ def verify_blockchain(args):
             # Computing the sha256 hash for each individual block
             blocksha256 = hashlib.sha256(entry).hexdigest()
 
-            entries.append([parent_block_hash, blocksha256, caseID, itemID, action, timestamp])
+            entries.append([parent_block_hash, blocksha256, caseID, itemID, action, timestamp, dataLength, freeFormText])
 
     print("Transactions in blockchain: {0}".format(len(entries)))
+    print(entries)
     # There can be only 1 error at a time
     # Filtering process
     # Check if we have a parent block
@@ -338,7 +353,7 @@ def verify_blockchain(args):
 
     # Now checking to see if the sha-256 hash for the current block matches the parent sha-256 hash of the next block
     for i in range(len(entries) - 1):
-        if entries[i][1] != hex(entries[i+1][0])[2:]:
+        if entries[i][1] != hex(entries[i+1][0])[2:].zfill(64):
             print("State of blockchain: ERROR\nBad block: {0}\nBlock contents do not match block checksum.".format(blockEntry[1]))
             sys.exit(1)
 
@@ -353,6 +368,8 @@ def removalCheck(itemIDS, entries):
     # Base case
     # Check if list is empty
     removalFlag = False
+    checkinFlag = False
+    checkoutFlag = False
     if len(itemIDS) == 0:
         return
     else:
@@ -370,13 +387,37 @@ def removalCheck(itemIDS, entries):
                 entryCopy = itemID_Filter(entryCopy, itemIDS[0], True)
                 # Loop through this copy, check to see if an item has been checked out or checked in after removal from chain.
                 for entry in entryCopy[0]:
-                    if entry[4] == 'DISPOSED' or entry[4] == 'RELEASED' or entry[4] == 'DESTROYED':
+                    if (entry[4] == 'DISPOSED' or entry[4] == 'RELEASED' or entry[4] == 'DESTROYED') and removalFlag == True:
+                            print("State of blockchain: ERROR\nBad block: {0}\nItem removed after having already been removed from chain.".format(entry[1]))
+                            sys.exit(1)
+                            
+                    elif entry[4] == 'CHECKEDIN' and checkinFlag == True:
+                        print(checkinFlag)
+                        print("State of blockchain: ERROR\nBad block: {0}\nItem checked in after having already been checked in from chain.".format(entry[1]))
+                        sys.exit(1)
+
+                    elif entry[4] == 'CHECKEDOUT' and checkoutFlag == True:
+                        print("State of blockchain: ERROR\nBad block: {0}\nItem checked out after having already been checked out from chain.".format(entry[1]))
+                        sys.exit(1)
+                    
+                    elif entry[4] == 'DISPOSED' or entry[4] == 'RELEASED' or entry[4] == 'DESTROYED':
                         removalFlag = True
-                    if entry[4] == 'CHECKEDIN' or entry[4] == 'CHECKEDOUT':
+                    elif entry[4] == 'CHECKEDIN' or entry[4] == 'CHECKEDOUT':
+                        if entry[4] == 'CHECKEDIN':
+                            checkinFlag = True
+                            checkoutFlag = False
+                        if entry[4] == 'CHECKEDOUT':
+                            checkoutFlag = True
+                            checkinFlag = False
                         if removalFlag == True:
                             print("State of blockchain: ERROR\nBad block: {0}\nItem checked out or checked in after removal from chain.".format(entry[1]))
                             sys.exit(1)
+                    else:
+                        print("State of blockchain: ERROR\nBad block: {0}\nInvalid removal reason.".format(entry[1]))
+                        sys.exit(1)
                 removalFlag = False
+                checkinFlag = False
+                checkoutFlag = False
                 # Remove the values we have found from entries
                 shift = 0
                 for i in range(len(entryCopy[1])):
