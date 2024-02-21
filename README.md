@@ -2,7 +2,7 @@
 ***<ins>Program Description</ins>***
 This program is meant to simulate a chain of custody breadcrumb system using blockchain mechanics. This was built as a group assignment for CSE 469 (DATA FORENSICS).
 
-**Programmer(s):** Nicholas Pinedo, Zion Esemonu, Bryan Peterson, and Trevor Ransom
+**Programmer(s):** Zion Esemonu, Nicholas Pinedo, Bryan Peterson, and Trevor Ransom
 
 **Group:** 2
 
